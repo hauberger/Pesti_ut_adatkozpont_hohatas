@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+<meta charset="UTF-8">
+<title>Hőterjedés — 15 MW-os pontforrás</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  :root{
+    --panel-bg: #1b1f24;
+    --panel-bg-2: #21262d;
+    --border: #313842;
+    --text: #e8e6df;
+    --text-dim: #9aa0a6;
+    --accent-cool: #4a90d9;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  html, body { height: 100%; margin: 0; padding: 0; font-family: var(--sans); background: #10131a; }
+  #map { position: absolute; top: 0; left: 0; right: 0; bottom: 0; z-index: 0; }
+
+  .panel {
+    position: absolute; z-index: 1000;
+    top: 16px; left: 16px;
+    width: 328px;
+    max-height: calc(100% - 32px);
+    overflow-y: auto;
+    background: var(--panel-bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    color: var(--text);
+    box-shadow: 0 8px 28px rgba(0,0,0,0.45);
+  }
+  .panel::-webkit-scrollbar { width: 8px; }
+  .panel::-webkit-scrollbar-thumb { background: #333b46; border-radius: 8px; }
+
+  .panel-section { padding: 16px 18px; border-bottom: 1px solid var(--border); }
+  .panel-section:last-child { border-bottom: none; }
+
+  h1 { font-size: 16px; font-weight: 650; margin: 0 0 4px 0; letter-spacing: 0.1px; }
+  .subtitle { font-size: 12.5px; color: var(--text-dim); line-height: 1.5; }
+  .coord { font-family: var(--mono); font-size: 11.5px; color: var(--accent-cool); }
+
+  label.field-label { display:block; font-size: 12px; color: var(--text-dim); margin-bottom: 6px; }
+  select.stability {
+    width: 100%; background: var(--panel-bg-2); color: var(--text);
+    border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px;
+    font-size: 13px; font-family: var(--sans); cursor: pointer;
+  }
+  .stability-note { font-size: 11.5px; color: var(--text-dim); margin-top: 8px; line-height: 1.5; }
+
+  table.readout { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 12px; margin-top: 10px; }
+  table.readout td { padding: 3px 0; }
+  table.readout td.k { color: var(--text-dim); }
+  table.readout td.v { text-align: right; color: var(--text); }
+
+  h2.section-title { font-size: 12.5px; font-weight: 600; margin: 0 0 10px 0; color: var(--text); }
+
+  .radius-row { display: flex; align-items: center; gap: 8px; font-size: 12px; padding: 3px 0; }
+  .radius-swatch { width: 12px; height: 12px; border-radius: 2px; flex-shrink: 0; border: 1px solid rgba(255,255,255,0.25); }
+  .radius-label { color: var(--text-dim); width: 62px; flex-shrink: 0; }
+  .radius-val { font-family: var(--mono); color: var(--text); }
+
+  .legend-gradient {
+    height: 14px; border-radius: 3px; margin-top: 8px;
+    background: linear-gradient(to right,
+      rgba(255,255,204,0), rgba(255,255,178,0.30), rgba(254,217,118,0.55),
+      rgba(254,178,76,0.72), rgba(253,141,60,0.82), rgba(240,59,32,0.85),
+      rgba(189,0,38,0.90), rgba(103,0,13,0.95));
+    border: 1px solid var(--border);
+  }
+  .legend-ticks { display:flex; justify-content: space-between; font-family: var(--mono); font-size: 10.5px; color: var(--text-dim); margin-top: 4px; }
+
+  .caveat { font-size: 11.5px; color: var(--text-dim); line-height: 1.55; }
+  .caveat b { color: var(--text); font-weight: 600; }
+  .formula { font-family: var(--mono); font-size: 12px; background: var(--panel-bg-2); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; margin: 8px 0; color: #e0c46a; }
+
+  .leaflet-tooltip.iso-label {
+    background: rgba(20,22,26,0.85); color: #f0eee6; border: none;
+    font-family: var(--mono); font-size: 10.5px; padding: 1px 6px; box-shadow: none;
+  }
+  .leaflet-tooltip.iso-label::before { display: none; }
+
+  .source-pulse { animation: pulse 2.2s ease-in-out infinite; }
+  @keyframes pulse {
+    0% { opacity: 0.55; }
+    50% { opacity: 1; }
+    100% { opacity: 0.55; }
+  }
+
+  @media (max-width: 620px) {
+    .panel { width: calc(100% - 24px); left: 12px; top: 12px; max-height: 60%; }
+  }
+</style>
+</head>
+<body>
+
+<div id="map"></div>
+
+<div class="panel">
+  <div class="panel-section">
+    <h1>Hőterjedés, szélcsend</h1>
+    <div class="subtitle">15 MW-os folyamatos pontszerű hőforrás · környezeti hőmérséklet 20&nbsp;°C<br>
+      <span class="coord">47,700667° É, 17,662184° K</span>
+    </div>
+  </div>
+
+  <div class="panel-section">
+    <label class="field-label" for="stability">Légköri keveredés</label>
+    <select class="stability" id="stability">
+      <option value="1">Szélcsendes / stabil (K&#8462; ≈ 1 m²/s)</option>
+      <option value="3" selected>Normál / semleges (K&#8462; ≈ 3 m²/s)</option>
+      <option value="10">Enyhén szeles / labilis (K&#8462; ≈ 10 m²/s)</option>
+    </select>
+    <div class="stability-note">Meghatározza, milyen gyorsan keveredik szét a hő a környező levegőben. A „normál meteorológiai körülmények” semleges stabilitásként vannak modellezve — ez az alapbeállítás.</div>
+
+    <div class="formula">ΔT(r) = Q / (2π·k·r)</div>
+
+    <table class="readout">
+      <tr><td class="k">Effektív hővezetési tényező (k)</td><td class="v" id="k-val">—</td></tr>
+      <tr><td class="k">Közeltér-határ (r₀)</td><td class="v">8 m</td></tr>
+      <tr><td class="k">ΔT r₀-nál</td><td class="v" id="dt0-val">—</td></tr>
+    </table>
+  </div>
+
+  <div class="panel-section">
+    <h2 class="section-title">Izoterma sugarak</h2>
+    <div id="radius-table"></div>
+  </div>
+
+  <div class="panel-section">
+    <h2 class="section-title">Hőmérséklet a környezeti fölött</h2>
+    <div class="legend-gradient"></div>
+    <div class="legend-ticks">
+      <span>+0,1°</span><span>+1°</span><span>+3°</span><span>+10°</span><span>+30°+</span>
+    </div>
+  </div>
+
+  <div class="panel-section">
+    <h2 class="section-title">Hogyan olvassuk a térképet</h2>
+    <div class="caveat">
+      Ez egy egyszerűsített, stacionárius turbulens diffúziós becslés, nem hitelesített terjedésmodellezés (pl. AERMOD/CALPUFF). A modell egy csupasz pontforrást feltételez, amely mozdulatlan, semleges légkörbe sugározza a hőt, figyelmen kívül hagyva a felhajtóerőt, a domborzatot, a vízfelületeket és az épületeket. A forráshoz nagyon közel (a szaggatott közeltér-körön belül) a pontforrás-közelítés túlbecsüli a ΔT-t — a valós berendezésnél ott mérnöki hőelvezetés működne. A sugarakat nagyságrendi becslésként kezeljük, nem geodéziai pontosságúként.
+    </div>
+  </div>
+</div>
+
+<script>
+  const SOURCE = L.latLng(47.700666733338174, 17.662183716396974);
+  const Q = 15e6;        // W
+  const RHO = 1.2;       // kg/m3
+  const CP = 1005;       // J/(kg K)
+  const R_MIN = 8;        // m, near-field cutoff
+  const AMBIENT = 20;     // deg C
+
+  const map = L.map('map', { zoomControl: true }).setView(SOURCE, 15);
+
+  const esriImagery = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+    maxZoom: 19,
+    attribution: 'Tiles &copy; Esri &mdash; Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community'
+  });
+
+  const esriTopo = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}', {
+    maxZoom: 19,
+    attribution: 'Tiles &copy; Esri &mdash; Source: Esri, HERE, Garmin, FAO, NOAA, USGS'
+  });
+
+  const esriStreet = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
+    maxZoom: 19,
+    attribution: 'Tiles &copy; Esri &mdash; Source: Esri, HERE, Garmin, USGS, Intermap'
+  });
+
+  const cartoVoyager = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+    maxZoom: 20,
+    subdomains: 'abcd',
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+  });
+
+  let activeLayer = esriImagery;
+  activeLayer.addTo(map);
+
+  L.control.layers({
+    'Esri World Imagery (műholdkép)': esriImagery,
+    'Esri World Topo (domborzat)': esriTopo,
+    'Esri World Street Map (utcatérkép)': esriStreet,
+    'CARTO Voyager (OSM adatok)': cartoVoyager
+  }, null, { position: 'bottomleft', collapsed: true }).addTo(map);
+
+  // Fallback chain in case the active tile provider is unreachable from this network.
+  let triedFallback = false;
+  activeLayer.on('tileerror', function() {
+    if (triedFallback) return;
+    triedFallback = true;
+    map.removeLayer(activeLayer);
+    cartoVoyager.addTo(map);
+  });
+
+  L.control.scale({ imperial: false }).addTo(map);
+
+  // ---- physics ----
+  function kEff(Kh) { return RHO * CP * Kh; }
+
+  function deltaT(distanceM, Kh) {
+    const r = Math.max(distanceM, R_MIN);
+    return Q / (2 * Math.PI * kEff(Kh) * r);
+  }
+
+  function radiusForDeltaT(targetDT, Kh) {
+    return Q / (2 * Math.PI * kEff(Kh) * targetDT);
+  }
+
+  // ---- color ramp (YlOrRd extended), mapped in log10(deltaT) space ----
+  const STOPS = [
+    { t: -1.30, c: [255,255,204, 0]   },
+    { t: -1.00, c: [255,255,178, 40]  },
+    { t: -0.50, c: [254,217,118, 90]  },
+    { t:  0.00, c: [254,178,76, 130]  },
+    { t:  0.50, c: [253,141,60, 165]  },
+    { t:  1.00, c: [240,59,32, 200]   },
+    { t:  1.50, c: [189,0,38, 225]    },
+    { t:  2.20, c: [103,0,13, 245]    }
+  ];
+
+  function colorForDeltaT(dt) {
+    if (dt <= 0.03) return 'rgba(0,0,0,0)';
+    let t = Math.log10(dt);
+    if (t <= STOPS[0].t) return `rgba(${STOPS[0].c.join(',')})`;
+    if (t >= STOPS[STOPS.length-1].t) {
+      const c = STOPS[STOPS.length-1].c;
+      return `rgba(${c[0]},${c[1]},${c[2]},${c[3]/255})`;
+    }
+    for (let i = 0; i < STOPS.length - 1; i++) {
+      const a = STOPS[i], b = STOPS[i+1];
+      if (t >= a.t && t <= b.t) {
+        const f = (t - a.t) / (b.t - a.t);
+        const r = a.c[0] + (b.c[0]-a.c[0])*f;
+        const g = a.c[1] + (b.c[1]-a.c[1])*f;
+        const bl = a.c[2] + (b.c[2]-a.c[2])*f;
+        const al = (a.c[3] + (b.c[3]-a.c[3])*f) / 255;
+        return `rgba(${r|0},${g|0},${bl|0},${al.toFixed(3)})`;
+      }
+    }
+    return 'rgba(0,0,0,0)';
+  }
+
+  // ---- canvas heat overlay ----
+  const HeatOverlay = L.Layer.extend({
+    initialize: function(source, options) {
+      this._source = source;
+      L.setOptions(this, options);
+      this._Kh = 5;
+    },
+    onAdd: function(map) {
+      this._map = map;
+      this._canvas = L.DomUtil.create('canvas', 'heat-overlay-canvas');
+      this._canvas.style.position = 'absolute';
+      this._canvas.style.pointerEvents = 'none';
+      const size = map.getSize();
+      this._canvas.width = size.x;
+      this._canvas.height = size.y;
+      map.getPanes().overlayPane.appendChild(this._canvas);
+      map.on('moveend', this._reset, this);
+      map.on('zoomend', this._reset, this);
+      map.on('resize', this._onResize, this);
+      this._reset();
+    },
+    onRemove: function(map) {
+      map.getPanes().overlayPane.removeChild(this._canvas);
+      map.off('moveend', this._reset, this);
+      map.off('zoomend', this._reset, this);
+      map.off('resize', this._onResize, this);
+    },
+    setKh: function(Kh) {
+      this._Kh = Kh;
+      this._redraw();
+    },
+    _onResize: function(e) {
+      this._canvas.width = e.newSize.x;
+      this._canvas.height = e.newSize.y;
+      this._reset();
+    },
+    _reset: function() {
+      const topLeft = this._map.containerPointToLayerPoint([0, 0]);
+      L.DomUtil.setPosition(this._canvas, topLeft);
+      const size = this._map.getSize();
+      this._canvas.width = size.x;
+      this._canvas.height = size.y;
+      this._redraw();
+    },
+    _redraw: function() {
+      if (!this._map) return;
+      const ctx = this._canvas.getContext('2d');
+      const w = this._canvas.width, h = this._canvas.height;
+      ctx.clearRect(0, 0, w, h);
+      const step = 5;
+      for (let px = 0; px < w; px += step) {
+        for (let py = 0; py < h; py += step) {
+          const latlng = this._map.containerPointToLatLng([px + step/2, py + step/2]);
+          const dist = this._map.distance(latlng, this._source);
+          const dt = deltaT(dist, this._Kh);
+          ctx.fillStyle = colorForDeltaT(dt);
+          ctx.fillRect(px, py, step, step);
+        }
+      }
+    }
+  });
+
+  const heatOverlay = new HeatOverlay(SOURCE);
+  heatOverlay.addTo(map);
+
+  // ---- isotherm rings ----
+  let ringGroup = L.layerGroup().addTo(map);
+  let nearFieldCircle = null;
+
+  const RING_TARGETS = [10, 5, 2, 1, 0.5, 0.2];
+  const RING_COLORS = ['#67000d', '#bd0026', '#f03b20', '#fd8d3c', '#feb24c', '#ffeda0'];
+
+  function fmtDistance(m) {
+    if (m >= 1000) return (m/1000).toFixed(2) + ' km';
+    return Math.round(m) + ' m';
+  }
+
+  function rebuild(Kh) {
+    ringGroup.clearLayers();
+    if (nearFieldCircle) { map.removeLayer(nearFieldCircle); }
+
+    // near-field limit ring
+    nearFieldCircle = L.circle(SOURCE, {
+      radius: R_MIN, color: '#ffffff', weight: 1, dashArray: '2,4',
+      fill: false, opacity: 0.6, interactive: false
+    }).addTo(map);
+
+    const radiusRows = [];
+    RING_TARGETS.forEach((targetDT, i) => {
+      const r = radiusForDeltaT(targetDT, Kh);
+      const circle = L.circle(SOURCE, {
+        radius: r,
+        color: RING_COLORS[i],
+        weight: 1.5,
+        dashArray: '5,5',
+        fill: false,
+        opacity: 0.85
+      });
+      circle.bindTooltip(`+${targetDT}°C  (${(AMBIENT+targetDT).toFixed(1)}°C)`, {
+        permanent: false, direction: 'right', className: 'iso-label', sticky: true
+      });
+      ringGroup.addLayer(circle);
+      radiusRows.push({ dt: targetDT, color: RING_COLORS[i], r });
+    });
+
+    // source marker
+    const sourceIcon = L.divIcon({
+      className: '',
+      html: `<div class="source-pulse" style="width:14px;height:14px;border-radius:50%;
+             background:#ff3b1f;border:2px solid #fff;box-shadow:0 0 10px rgba(255,59,31,0.9);"></div>`,
+      iconSize: [14,14], iconAnchor: [7,7]
+    });
+    ringGroup.addLayer(
+      L.marker(SOURCE, { icon: sourceIcon })
+        .bindPopup('<b>15 MW-os hőforrás</b><br>47,700667°, 17,662184°<br>Folyamatos, stacionárius üzem')
+    );
+
+    heatOverlay.setKh(Kh);
+
+    // update panel readouts
+    document.getElementById('k-val').textContent = kEff(Kh).toFixed(0) + ' W/(m·K)';
+    document.getElementById('dt0-val').textContent = '+' + deltaT(R_MIN, Kh).toFixed(1) + ' °C';
+
+    const tableEl = document.getElementById('radius-table');
+    tableEl.innerHTML = radiusRows.map(row => `
+      <div class="radius-row">
+        <div class="radius-swatch" style="background:${row.color}"></div>
+        <div class="radius-label">+${row.dt}°C</div>
+        <div class="radius-val">${fmtDistance(row.r)}</div>
+      </div>
+    `).join('');
+  }
+
+  rebuild(3);
+
+  document.getElementById('stability').addEventListener('change', (e) => {
+    rebuild(parseFloat(e.target.value));
+  });
+</script>
+
+</body>
+</html>
