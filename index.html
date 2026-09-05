@@ -76,6 +76,29 @@
   .caveat b { color: var(--text); font-weight: 600; }
   .formula { font-family: var(--mono); font-size: 12px; background: var(--panel-bg-2); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; margin: 8px 0; color: #e0c46a; }
 
+  .address-row { display: flex; gap: 6px; }
+  .address-input {
+    flex: 1; min-width: 0; background: var(--panel-bg-2); color: var(--text);
+    border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px;
+    font-size: 13px; font-family: var(--sans);
+  }
+  .address-input::placeholder { color: #6a7078; }
+  .address-input:focus { outline: none; border-color: var(--accent-cool); }
+  .address-btn {
+    background: var(--accent-cool); color: #0c1116; border: none; border-radius: 6px;
+    padding: 0 14px; font-size: 13px; font-weight: 600; cursor: pointer; flex-shrink: 0;
+  }
+  .address-btn:hover { background: #5aa0e5; }
+  .address-btn:disabled { opacity: 0.6; cursor: default; }
+  .address-result {
+    margin-top: 10px; font-size: 12.5px; color: var(--text); line-height: 1.6;
+    min-height: 14px;
+  }
+  .address-result .addr-name { font-weight: 600; color: var(--text); }
+  .address-result .addr-line { color: var(--text-dim); }
+  .address-result .addr-band { color: #ffb066; font-family: var(--mono); }
+  .address-result .addr-error { color: #ff6b6b; }
+
   .leaflet-tooltip.iso-label {
     background: rgba(20,22,26,0.85); color: #f0eee6; border: none;
     font-family: var(--mono); font-size: 10.5px; padding: 1px 6px; box-shadow: none;
@@ -109,8 +132,8 @@
   <div class="panel-section">
     <label class="field-label" for="stability">Légköri keveredés</label>
     <select class="stability" id="stability">
-      <option value="1">Szélcsendes / stabil (K&#8462; ≈ 1 m²/s)</option>
-      <option value="3" selected>Normál / semleges (K&#8462; ≈ 3 m²/s)</option>
+      <option value="1" selected>Szélcsendes / stabil (K&#8462; ≈ 1 m²/s)</option>
+      <option value="3">Normál / semleges (K&#8462; ≈ 3 m²/s)</option>
       <option value="10">Enyhén szeles / labilis (K&#8462; ≈ 10 m²/s)</option>
     </select>
     <div class="stability-note">Meghatározza, milyen gyorsan keveredik szét a hő a környező levegőben. A „normál meteorológiai körülmények” semleges stabilitásként vannak modellezve — ez az alapbeállítás.</div>
@@ -135,6 +158,15 @@
     <div class="legend-ticks">
       <span>+0,1°</span><span>+1°</span><span>+3°</span><span>+10°</span><span>+30°+</span>
     </div>
+  </div>
+
+  <div class="panel-section">
+    <h2 class="section-title">Keress rá a címedre</h2>
+    <div class="address-row">
+      <input type="text" id="address-input" class="address-input" placeholder="pl. Győr, Baross Gábor út 10.">
+      <button id="address-search-btn" class="address-btn">Keresés</button>
+    </div>
+    <div id="address-result" class="address-result"></div>
   </div>
 
   <div class="panel-section">
@@ -320,7 +352,10 @@
     return Math.round(m) + ' m';
   }
 
+  let currentKh = 1;
+
   function rebuild(Kh) {
+    currentKh = Kh;
     ringGroup.clearLayers();
     if (nearFieldCircle) { map.removeLayer(nearFieldCircle); }
 
@@ -376,10 +411,104 @@
     `).join('');
   }
 
-  rebuild(3);
+  rebuild(1);
 
   document.getElementById('stability').addEventListener('change', (e) => {
     rebuild(parseFloat(e.target.value));
+    if (searchLatLng) updateAddressResult(searchLabel);
+  });
+
+  // ---- address search ----
+  let searchMarker = null;
+  let searchLatLng = null;
+  let searchLabel = null;
+
+  const ASCENDING_THRESHOLDS = [0.2, 0.5, 1, 2, 5, 10];
+
+  function bandTextForDeltaT(dt) {
+    const lo = ASCENDING_THRESHOLDS[0];
+    const hi = ASCENDING_THRESHOLDS[ASCENDING_THRESHOLDS.length - 1];
+    if (dt < lo) {
+      return `alacsonyabb, mint ${(AMBIENT + lo).toFixed(1)} °C (a hatás elhanyagolható)`;
+    }
+    if (dt >= hi) {
+      return `magasabb, mint ${(AMBIENT + hi).toFixed(1)} °C (a forráshoz közel, a modell közeltér-korlátján belül)`;
+    }
+    for (let i = 0; i < ASCENDING_THRESHOLDS.length - 1; i++) {
+      const a = ASCENDING_THRESHOLDS[i], b = ASCENDING_THRESHOLDS[i+1];
+      if (dt >= a && dt < b) {
+        return `${(AMBIENT + a).toFixed(1)}–${(AMBIENT + b).toFixed(1)} °C közötti tartomány`;
+      }
+    }
+    return '—';
+  }
+
+  function updateAddressResult(label) {
+    if (!searchLatLng) return;
+    const dist = map.distance(searchLatLng, SOURCE);
+    const dt = deltaT(dist, currentKh);
+    const pointVal = (AMBIENT + dt).toFixed(2);
+    const band = bandTextForDeltaT(dt);
+    document.getElementById('address-result').innerHTML = `
+      <div class="addr-name">${label}</div>
+      <div class="addr-line">Távolság a hőforrástól: ${fmtDistance(dist)}</div>
+      <div class="addr-line">Becsült hőmérséklet-tartomány:</div>
+      <div class="addr-band">${band}</div>
+      <div class="addr-line">Modellezett pontérték: ${pointVal} °C</div>
+    `;
+  }
+
+  function placeSearchMarker(latlng) {
+    if (searchMarker) { map.removeLayer(searchMarker); }
+    const icon = L.divIcon({
+      className: '',
+      html: `<div style="width:14px;height:14px;border-radius:50%;
+             background:#2f8fe0;border:2px solid #fff;box-shadow:0 0 8px rgba(47,143,224,0.9);"></div>`,
+      iconSize: [14,14], iconAnchor: [7,7]
+    });
+    searchMarker = L.marker(latlng, { icon }).addTo(map);
+  }
+
+  async function doAddressSearch() {
+    const input = document.getElementById('address-input');
+    const btn = document.getElementById('address-search-btn');
+    const resultEl = document.getElementById('address-result');
+    const query = input.value.trim();
+    if (!query) return;
+
+    btn.disabled = true;
+    btn.textContent = '…';
+    resultEl.innerHTML = '<div class="addr-line">Keresés…</div>';
+
+    try {
+      const url = 'https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=hu&addressdetails=0&q=' + encodeURIComponent(query);
+      const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
+      if (!res.ok) throw new Error('network');
+      const data = await res.json();
+      if (!data || data.length === 0) {
+        resultEl.innerHTML = '<div class="addr-error">Nem található ilyen cím. Próbáld pontosabban megadni (település, utca, házszám).</div>';
+        return;
+      }
+      const hit = data[0];
+      const latlng = L.latLng(parseFloat(hit.lat), parseFloat(hit.lon));
+      searchLatLng = latlng;
+
+      const shortName = hit.display_name.split(',').slice(0, 3).join(',');
+      searchLabel = shortName;
+      placeSearchMarker(latlng);
+      map.flyTo(latlng, Math.max(map.getZoom(), 16));
+      updateAddressResult(shortName);
+    } catch (err) {
+      resultEl.innerHTML = '<div class="addr-error">A keresés nem sikerült. Ellenőrizd az internetkapcsolatot, majd próbáld újra.</div>';
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Keresés';
+    }
+  }
+
+  document.getElementById('address-search-btn').addEventListener('click', doAddressSearch);
+  document.getElementById('address-input').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') doAddressSearch();
   });
 </script>
 
