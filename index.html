@@ -429,15 +429,15 @@
     const lo = ASCENDING_THRESHOLDS[0];
     const hi = ASCENDING_THRESHOLDS[ASCENDING_THRESHOLDS.length - 1];
     if (dt < lo) {
-      return `alacsonyabb, mint ${(AMBIENT + lo).toFixed(1)} °C (a hatás elhanyagolható)`;
+      return `kevesebb, mint +${lo.toFixed(1)} °C (a hatás elhanyagolható)`;
     }
     if (dt >= hi) {
-      return `magasabb, mint ${(AMBIENT + hi).toFixed(1)} °C (a forráshoz közel, a modell közeltér-korlátján belül)`;
+      return `több, mint +${hi.toFixed(1)} °C (a forráshoz közel, a modell közeltér-korlátján belül)`;
     }
     for (let i = 0; i < ASCENDING_THRESHOLDS.length - 1; i++) {
       const a = ASCENDING_THRESHOLDS[i], b = ASCENDING_THRESHOLDS[i+1];
       if (dt >= a && dt < b) {
-        return `${(AMBIENT + a).toFixed(1)}–${(AMBIENT + b).toFixed(1)} °C közötti tartomány`;
+        return `+${a.toFixed(1)}–+${b.toFixed(1)} °C közötti többlet`;
       }
     }
     return '—';
@@ -447,14 +447,14 @@
     if (!searchLatLng) return;
     const dist = map.distance(searchLatLng, SOURCE);
     const dt = deltaT(dist, currentKh);
-    const pointVal = (AMBIENT + dt).toFixed(2);
+    const pointVal = '+' + dt.toFixed(2) + ' °C';
     const band = bandTextForDeltaT(dt);
     document.getElementById('address-result').innerHTML = `
       <div class="addr-name">${label}</div>
       <div class="addr-line">Távolság a hőforrástól: ${fmtDistance(dist)}</div>
-      <div class="addr-line">Becsült hőmérséklet-tartomány:</div>
+      <div class="addr-line">Becsült hőmérséklet-többlet tartomány:</div>
       <div class="addr-band">${band}</div>
-      <div class="addr-line">Modellezett pontérték: ${pointVal} °C</div>
+      <div class="addr-line">Modellezett hőmérséklet-többlet: ${pointVal}</div>
     `;
   }
 
