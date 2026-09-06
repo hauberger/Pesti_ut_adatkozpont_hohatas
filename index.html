@@ -113,7 +113,7 @@
   }
 
   @media (max-width: 620px) {
-    .panel { width: calc(100% - 24px); left: 12px; top: 12px; max-height: 60%; }
+    .panel { width: calc(100% - 24px); left: 12px; top: 12px; max-height: 50vh; }
   }
 </style>
 </head>
@@ -132,8 +132,8 @@
   <div class="panel-section">
     <label class="field-label" for="stability">Légköri keveredés</label>
     <select class="stability" id="stability">
-      <option value="1.1" selected>Szélcsendes / stabil (K&#8462; ≈ 1 m²/s)</option>
-      <option value="3.5">Normál / semleges (K&#8462; ≈ 3 m²/s)</option>
+      <option value="1.1" selected>Szélcsendes / stabil (K&#8462; ≈ 1,1 m²/s)</option>
+      <option value="3.5">Normál / semleges (K&#8462; ≈ 3,5 m²/s)</option>
       <option value="10">Enyhén szeles / labilis (K&#8462; ≈ 10 m²/s)</option>
     </select>
     <div class="stability-note">Meghatározza, milyen gyorsan keveredik szét a hő a környező levegőben. A „normál meteorológiai körülmények” semleges stabilitásként vannak modellezve — ez az alapbeállítás.</div>
@@ -142,8 +142,6 @@
 
     <table class="readout">
       <tr><td class="k">Effektív hővezetési tényező (k)</td><td class="v" id="k-val">—</td></tr>
-      <tr><td class="k">Közeltér-határ (r₀)</td><td class="v">8 m</td></tr>
-      <tr><td class="k">ΔT r₀-nál</td><td class="v" id="dt0-val">—</td></tr>
     </table>
   </div>
 
@@ -399,7 +397,6 @@
 
     // update panel readouts
     document.getElementById('k-val').textContent = kEff(Kh).toFixed(0) + ' W/(m·K)';
-    document.getElementById('dt0-val').textContent = '+' + deltaT(R_MIN, Kh).toFixed(1) + ' °C';
 
     const tableEl = document.getElementById('radius-table');
     tableEl.innerHTML = radiusRows.map(row => `
@@ -411,7 +408,7 @@
     `).join('');
   }
 
-  rebuild(1);
+  rebuild(1.1);
 
   document.getElementById('stability').addEventListener('change', (e) => {
     rebuild(parseFloat(e.target.value));
